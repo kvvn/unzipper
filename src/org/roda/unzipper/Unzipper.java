@@ -85,17 +85,26 @@ class doComms implements Runnable {
         BASE64Encoder encoder = new BASE64Encoder();
         byte[] decodedBytes = decoder.decodeBuffer(content);
 
-        int read = 0;
+
         String file_content = "";
         ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(decodedBytes));
         ZipEntry entry = null;
         while ((entry = zis.getNextEntry()) != null) {
+            int needed = (int)entry.getSize();
+            int read = 0;
             file_content = "";
-            byte[] bytesIn = new byte[8192];
+            byte[] bytesIn = new byte[needed];
             System.out.println(entry.getName());
-            while ((read = zis.read(bytesIn)) != -1) {
-                file_content = encoder.encode(Arrays.copyOfRange(bytesIn, 0, read));
+            while (needed > 0) {
+                int pos = zis.read(bytesIn, read, needed);
+                if (pos == -1) {
+                    throw new IOException("Unexpected end of stream after " + pos + " bytes for entry " + entry.getName());
+                }
+                read += pos;
+                needed -= pos;
             }
+            file_content = encoder.encode(bytesIn);
+
             res.put(entry.getName(), file_content);
             zis.closeEntry();
         }
