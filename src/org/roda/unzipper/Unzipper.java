@@ -11,7 +11,7 @@ package org.roda.unzipper;
 
 import java.io.*;
 import java.net.*;
-import java.util.Arrays;
+import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.zip.ZipEntry;
@@ -59,13 +59,17 @@ class doComms implements Runnable {
 
             BufferedReader br =	new BufferedReader(new InputStreamReader(server.getInputStream()));
             BufferedWriter bw =	new BufferedWriter(new OutputStreamWriter(server.getOutputStream()));
-
+            Map<String, String> res;
             while((line = br.readLine()) != null) {
                 //input=input + line;
                 System.out.println(line);
 
-                Map<String, String> res = this.unzip(line);
-                JSONObject answer = new JSONObject(res);
+                try {
+                    res = this.unzip(line);
+                } catch (IllegalArgumentException iae) {
+                    res = this.unzip(line, "CP1251");
+                }
+                    JSONObject answer = new JSONObject(res);
                 System.out.println(answer.toString());
                 bw.write(answer.toString() + "\n");
                 bw.flush();
@@ -78,7 +82,7 @@ class doComms implements Runnable {
             ioe.printStackTrace();
         }
     }
-    private Map<String, String> unzip (String content) throws IOException {
+    private Map<String, String> unzip (String content) throws IOException, IllegalArgumentException {
         Map<String, String> res = new HashMap<String, String>();
 
         BASE64Decoder decoder = new BASE64Decoder();
@@ -87,7 +91,43 @@ class doComms implements Runnable {
 
 
         String file_content = "";
+
         ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(decodedBytes));
+        ZipEntry entry = null;
+        while ((entry = zis.getNextEntry()) != null) {
+            int needed = (int)entry.getSize();
+            int read = 0;
+            file_content = "";
+            byte[] bytesIn = new byte[needed];
+            System.out.println(entry.getName());
+            while (needed > 0) {
+                int pos = zis.read(bytesIn, read, needed);
+                if (pos == -1) {
+                    throw new IOException("Unexpected end of stream after " + pos + " bytes for entry " + entry.getName());
+                }
+                read += pos;
+                needed -= pos;
+            }
+            file_content = encoder.encode(bytesIn);
+
+            res.put(entry.getName(), file_content);
+            zis.closeEntry();
+        }
+        zis.close();
+        return res;
+    }
+
+    private Map<String, String> unzip (String content, String encoding) throws IOException, IllegalArgumentException {
+        Map<String, String> res = new HashMap<String, String>();
+
+        BASE64Decoder decoder = new BASE64Decoder();
+        BASE64Encoder encoder = new BASE64Encoder();
+        byte[] decodedBytes = decoder.decodeBuffer(content);
+
+
+        String file_content = "";
+
+        ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(decodedBytes), Charset.forName(encoding));
         ZipEntry entry = null;
         while ((entry = zis.getNextEntry()) != null) {
             int needed = (int)entry.getSize();
